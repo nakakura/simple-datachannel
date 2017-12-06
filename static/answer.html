@@ -1,12 +1,26 @@
 <html>
     <head>
         <title>Simple DataChannel</title>
-        <link rel="stylesheet" media="screen" href="stylesheets/main.css">
         <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
     </head>
-    <body>
-    	<button id="ws-connect">Connect to WebSocket</button>
-        
+    <body bgcolor="000000">
+        <table>
+            <tr>
+                <td>
+                    <button type="text" id="offer_feed_button">offer feed</button>
+                    <br />
+                    <textarea id="offer_feed" cols="50" rows="20"></textarea>
+                </td>
+                <td>
+                    <button type="text" id="ice_feed_button">ice feed</button>
+                    <br />
+                    <textarea id="ice_feed" cols="50" rows="20"></textarea>
+                </td>
+            </tr>
+        </table>
+        <textarea id="answer" cols="50" rows="20"></textarea>
+        <textarea id="ice_display" cols="50" rows="20"></textarea>
+        <br />
         <form id="idform" action="">
             <input type="text" id="user" placeholder="e.g. Alice">
             <button id="setid">Set your name</button>
@@ -31,9 +45,54 @@
     $("#dcform").submit(connectTo);
     $("#sendform").submit(sendDirect);
 
+    $("#offer_feed_button").click(set_offer);
+    $("#ice_feed_button").click(set_ice);
+    $("#answer_button").click(create_answer);
+
     $("#setid").click(setMyId);
     $("#dc-connect").click(connectTo);
     $("#send").click(sendDirect);
+
+    function set_ice(e) {
+        let ice = document.getElementById("ice_feed").value;
+        console.log(ice);
+        var hoge = {
+            sdpMLineIndex: 0,
+            sdpMid: "data"
+        };
+        hoge.candidate = ice;
+        console.log(hoge);
+        processIce(hoge);
+    }
+
+    function set_offer(e) {
+        let offer = document.getElementById("offer_feed").value;
+        var hoge = {
+            type: "offer"
+        };
+        hoge.sdp = offer;
+        console.log(hoge);
+        processOffer(hoge);
+    }
+
+    function create_offer(e){
+        e.preventDefault();
+        user2 = $("#connectTo").val();
+        openDataChannel();
+
+        var sdpConstraints = { offerToReceiveAudio: false,  offerToReceiveVideo: false }
+        peerConnection.createOffer(sdpConstraints).then(function (sdp) {
+           console.log(JSON.parse(JSON.stringify(sdp)));
+            document.getElementById("offer").innerHTML = sdp.sdp;
+            peerConnection.setLocalDescription(sdp);
+            //sendNegotiation("offer", sdp);
+            //console.log("------ SEND OFFER ------");
+        }, function (err) {
+            console.log(err)
+        });
+    }
+
+
 
     var ws = null;
     var user = "";
@@ -92,7 +151,7 @@
     }
 
     var config = {"iceServers":[{"url":"stun:stun.l.google.com:19302"}]};
-    var connection = { 'optional': [{'DtlsSrtpKeyAgreement': true}, {'RtpDataChannels': true }] };
+    var connection = {};
 
     var peerConnection;
     var dataChannel;
@@ -104,17 +163,15 @@
         user2 = $("#connectTo").val();
         openDataChannel();
 
-        var sdpConstraints = {'mandatory':
-            {
-                'OfferToReceiveAudio': false,
-                'OfferToReceiveVideo': false
-            }
-        };
-        var offer = peerConnection.createOffer(function (sdp) {
+        var sdpConstraints = { offerToReceiveAudio: false,  offerToReceiveVideo: false }
+        peerConnection.createOffer(sdpConstraints).then(function (sdp) {
+            document.getElementById("offer").innerHTML = sdp.sdp;
             peerConnection.setLocalDescription(sdp);
-            sendNegotiation("offer", sdp);
-            console.log("------ SEND OFFER ------");
-        }, null, sdpConstraints);
+            //sendNegotiation("offer", sdp);
+            //console.log("------ SEND OFFER ------");
+        }, function (err) {
+            console.log(err)
+        });
 
     }
 
@@ -136,26 +193,32 @@
         peerConnection.onicecandidate = function(e){
             if (!peerConnection || !e || !e.candidate) return;
             var candidate = event.candidate;
-            sendNegotiation("candidate", candidate);
-        }
+            console.log(candidate);
+            document.getElementById("ice_display").innerHTML += candidate.candidate + "\r\n\r\n";
+            //sendNegotiation("candidate", candidate);
+        };
 
         dataChannel = peerConnection.createDataChannel("datachannel", {reliable: false});
 
-        dataChannel.onmessage = function(e){
-            console.log("DC from ["+user2+"]:" +e.data);
-            $('body').append(user2+': <div class="message from">'+e.data+'</div>')
-        }
         dataChannel.onopen = function(){
-            console.log("------ DATACHANNEL OPENED ------")
+            console.log("------ DATACHANNEL OPENED ------");
             $("#sendform").show();
         };
         dataChannel.onclose = function(){console.log("------ DC closed! ------")};
         dataChannel.onerror = function(){console.log("DC ERROR!!!")};
 
-        peerConnection.ondatachannel = function () {
+        peerConnection.ondatachannel = function (ev) {
             console.log('peerConnection.ondatachannel event fired.');
+            ev.channel.onopen = function() {
+                console.log('Data channel is open and ready to be used.');
+            };
+            ev.channel.onmessage = function(e){
+                console.log("DC from ["+user2+"]:" +e.data);
+                $('body').append(user2+': <div class="message from">'+e.data+'</div>')
+            }
         };
 
+        return peerConnection
     }
 
     function sendNegotiation(type, sdp){
@@ -165,8 +228,10 @@
     }
 
     function processOffer(offer){
-        openDataChannel();
-        peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        var peerConnection = openDataChannel();
+        peerConnection.setRemoteDescription(new RTCSessionDescription(offer)).catch(e => {
+            console.log(e)
+        });
 
         var sdpConstraints = {'mandatory':
             {
@@ -175,11 +240,15 @@
             }
         };
 
-        peerConnection.createAnswer(function (sdp) {
-            peerConnection.setLocalDescription(sdp);
-            sendNegotiation("answer", sdp);
-            console.log("------ SEND ANSWER ------");
-        }, null, sdpConstraints);
+        peerConnection.createAnswer(sdpConstraints).then(function (sdp) {
+            return peerConnection.setLocalDescription(sdp).then(function() {
+                document.getElementById("answer").innerHTML = sdp.sdp;
+                //sendNegotiation("answer", sdp);
+                console.log("------ SEND ANSWER ------");
+            })
+        }, function(err) {
+            console.log(err)
+        });
         console.log("------ PROCESSED OFFER ------");
 
     };
@@ -192,7 +261,10 @@
     };
 
     function processIce(iceCandidate){
-        peerConnection.addIceCandidate(new RTCIceCandidate(iceCandidate));
+        peerConnection.addIceCandidate(new RTCIceCandidate(iceCandidate)).catch(e => {
+            debugger
+            console.log(e)
+        })
     }
 
     </script>

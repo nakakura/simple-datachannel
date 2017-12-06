@@ -1,0 +1,176 @@
+<html>
+    <head>
+        <title>Simple DataChannel</title>
+        <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+    </head>
+    <body bgcolor="ffffff">
+        <button type="text" id="offer_button">create offer</button>
+        <br />
+        <textarea id="offer" cols="50" rows="20"></textarea>
+        <textarea id="ice_display" cols="50" rows="20"></textarea>
+        <table>
+            <tr>
+               <td>
+                    <button type="text" id="answer_feed_button">set answer</button>
+                    <br />
+                    <textarea id="answer_feed" cols="50" rows="20"></textarea>
+                </td>
+                <td>
+                   <button type="text" id="ice_feed_button">ice feed</button>
+                   <br />
+                   <textarea id="ice_feed" cols="50" rows="20"></textarea>
+                </td>
+
+            </tr>
+        </table>
+       <br />
+        <form id="sendform" action="">
+            <input type="text" id="message">
+            <button id="send">Send Text over DataChannel</button>
+        </form>
+    </body>
+
+    <script>
+
+    $("#sendform").hide();
+
+    $("#dcform").submit(connectTo);
+    $("#sendform").submit(sendDirect);
+
+    $("#offer_button").click(create_offer);
+    $("#ice_feed_button").click(set_ice);
+    $("#answer_feed_button").click(set_answer);
+
+    $("#dc-connect").click(connectTo);
+    $("#send").click(sendDirect);
+
+    function create_offer(e){
+        e.preventDefault();
+        user2 = $("#connectTo").val();
+        openDataChannel();
+
+        var sdpConstraints = { offerToReceiveAudio: false,  offerToReceiveVideo: false }
+        peerConnection.createOffer(sdpConstraints).then(function (sdp) {
+           console.log(JSON.parse(JSON.stringify(sdp)));
+            document.getElementById("offer").innerHTML = sdp.sdp;
+            peerConnection.setLocalDescription(sdp);
+            //sendNegotiation("offer", sdp);
+            //console.log("------ SEND OFFER ------");
+        }, function (err) {
+            console.log(err)
+        });
+    }
+
+    function set_ice(e) {
+        let ice = document.getElementById("ice_feed").value;
+        console.log(ice);
+        var hoge = {
+            sdpMLineIndex: 0,
+            sdpMid: "data"
+        };
+        hoge.candidate = ice;
+        console.log(hoge);
+        processIce(hoge);
+    }
+
+
+    function set_answer(e){
+        let answer = document.getElementById("answer_feed").value;
+        var hoge = {
+            type: "answer"
+        };
+        hoge.sdp = answer;
+        console.log(hoge);
+        processAnswer(hoge);
+    }
+
+    var config = {"iceServers":[{"url":"stun:stun.l.google.com:19302"}]};
+    var connection = {};
+
+    var peerConnection;
+    var dataChannel;
+
+    function connectTo(e){
+        e.preventDefault();
+        user2 = $("#connectTo").val();
+        openDataChannel();
+
+        var sdpConstraints = { offerToReceiveAudio: false,  offerToReceiveVideo: false }
+        peerConnection.createOffer(sdpConstraints).then(function (sdp) {
+            document.getElementById("offer").innerHTML = sdp.sdp;
+            peerConnection.setLocalDescription(sdp);
+            //sendNegotiation("offer", sdp);
+            //console.log("------ SEND OFFER ------");
+        }, function (err) {
+            console.log(err)
+        });
+
+    }
+
+    function sendDirect(e){
+        e.preventDefault();
+        dataChannel.send($("#message").val());
+        $('body').append('Me: <div class="message">'+$("#message").val()+'</div>');
+        console.log("Sending over datachannel: " + $("#message").val());
+        $("#message").val('');
+    }
+
+    function getURLParameter(name) {
+        return decodeURIComponent((new RegExp('[?|&]' + name + '=' + '([^&;]+?)(&|#|;|$)').exec(location.search)||[,""])[1].replace(/\+/g, '%20'))||null
+    }
+
+
+    function openDataChannel (){
+        peerConnection = new webkitRTCPeerConnection(config, connection);
+        peerConnection.onicecandidate = function(e){
+            if (!peerConnection || !e || !e.candidate) return;
+            var candidate = event.candidate;
+            console.log(candidate);
+            document.getElementById("ice_display").innerHTML += candidate.candidate + "\r\n\r\n";
+            //sendNegotiation("candidate", candidate);
+        };
+
+        dataChannel = peerConnection.createDataChannel("datachannel", {reliable: false});
+
+        dataChannel.onopen = function(){
+            console.log("------ DATACHANNEL OPENED ------");
+            $("#sendform").show();
+        };
+        dataChannel.onclose = function(){console.log("------ DC closed! ------")};
+        dataChannel.onerror = function(){console.log("DC ERROR!!!")};
+
+        peerConnection.ondatachannel = function (ev) {
+            console.log('peerConnection.ondatachannel event fired.');
+            ev.channel.onopen = function() {
+                console.log('Data channel is open and ready to be used.');
+            };
+            ev.channel.onmessage = function(e){
+                console.log("DC from ["+user2+"]:" +e.data);
+                $('body').append(user2+': <div class="message from">'+e.data+'</div>')
+            }
+        };
+
+        return peerConnection
+    }
+
+    function sendNegotiation(type, sdp){
+        var json = { from: user, to: user2, action: type, data: sdp};
+        ws.send(JSON.stringify(json));
+        console.log("Sending ["+user+"] to ["+user2+"]: " + JSON.stringify(sdp));
+    }
+
+    function processAnswer(answer){
+
+        peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+        console.log("------ PROCESSED ANSWER ------");
+        return true;
+    }
+
+    function processIce(iceCandidate){
+        peerConnection.addIceCandidate(new RTCIceCandidate(iceCandidate)).catch(e => {
+            console.error(e);
+        });
+    }
+
+    </script>
+</html>
