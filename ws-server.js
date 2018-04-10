@@ -25,5 +25,6 @@ wss.on('connection', function(ws){
 var express = require('express'),
     app = express();
 
+console.log(__dirname + '/static');
 app.use(express.static(__dirname + '/static'));
 app.listen(8888);

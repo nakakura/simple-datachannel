@@ -121,10 +121,12 @@
 
 
     function openDataChannel (){
-        peerConnection = new webkitRTCPeerConnection(config, connection);
+	var pc = window.RTCPeerConnection || window.mozRTCPeerConnection || 
+		                           window.webkitRTCPeerConnection || window.msRTCPeerConnection;
+        peerConnection = new pc(config, connection);
         peerConnection.onicecandidate = function(e){
             if (!peerConnection || !e || !e.candidate) return;
-            var candidate = event.candidate;
+            var candidate = e.candidate;
             console.log(candidate);
             document.getElementById("ice_display").innerHTML += candidate.candidate + "\r\n\r\n";
             //sendNegotiation("candidate", candidate);
